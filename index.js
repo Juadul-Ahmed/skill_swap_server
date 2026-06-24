@@ -34,6 +34,21 @@ async function run() {
     const database = client.db("skillswap")
     const taskCollection = database.collection("tasks")
 
+    app.get('/api/tasks',async(req,res)=>{
+      const query = {}
+     
+      if(req.query.taskId){
+        query.taskId = req.query.taskId;
+      }
+      if(req.query.status){
+        query.status = req.query.status
+      }
+       const cursor = await taskCollection.find(query)
+       const result = await cursor.toArray();
+       res.send(result)
+    })
+
+
     app.post('/api/tasks', async(req,res) => {
       const task = req.body;
       const result = await taskCollection.insertOne(task)
