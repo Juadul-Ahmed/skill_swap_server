@@ -36,8 +36,8 @@ async function run() {
     app.get("/api/tasks", async (req, res) => {
       const query = {};
 
-      if (req.query.taskId) {
-        query.taskId = req.query.taskId;
+      if (req.query.clientId) {
+        query.clientId = req.query.clientId;
       }
       if (req.query.status) {
         query.status = req.query.status;
@@ -51,28 +51,45 @@ async function run() {
       const task = req.body;
       const newTask = {
         ...task,
-        createdAt: new Date()
-      }
+        createdAt: new Date(),
+      };
       const result = await taskCollection.insertOne(newTask);
       res.send(result);
     });
 
+    app.get("/api/tasks/public", async (req, res) => {
+      
+        const query = { status: "open" };
+
+  
+        if (req.query.category) {
+          query.category = req.query.category;
+        }
+
+        const result = await taskCollection.find(query).toArray();
+        res.json(result);
+      
+    });
+
     // client API
+
     app.get("/api/profile/clients", async (req, res) => {
-      const query = {};
-      if (req.query.clientId) {
-        query.clientId = req.query.clientId;
+      const { clientId } = req.query;
+
+      if (!clientId) {
+        return res.status(400).json({ error: "clientId is required" });
       }
-      const result = await clientCollection.findOne(query);
-      res.send(result);
+
+      const result = await clientCollection.findOne({ clientId });
+      res.json(result || null);
     });
 
     app.post("/api/clients", async (req, res) => {
       const client = req.body;
-      const newClient ={
+      const newClient = {
         ...client,
-        createdAt: new Date()
-      }
+        createdAt: new Date(),
+      };
       const result = await clientCollection.insertOne(newClient);
       res.send(result);
     });
