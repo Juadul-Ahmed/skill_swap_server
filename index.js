@@ -33,6 +33,7 @@ async function run() {
 
     const database = client.db("skillswap")
     const taskCollection = database.collection("tasks")
+    const clientCollection = database.collection("clients")
 
     app.get('/api/tasks',async(req,res)=>{
       const query = {}
@@ -54,6 +55,14 @@ async function run() {
       const result = await taskCollection.insertOne(task)
       res.send(result);
     } )
+
+    // client API
+      app.post('api/clients',async(req,res)=>{
+        const client = req.body;
+        const result = await clientCollection.insertOne(client);
+        res.send(client)
+
+      })
 
 
     // Send a ping to confirm a successful connection
