@@ -58,17 +58,24 @@ async function run() {
     });
 
     app.get("/api/tasks/public", async (req, res) => {
-      
-        const query = { status: "open" };
+      const query = {
+        status: "open",
+      };
 
-  
-        if (req.query.category) {
-          query.category = req.query.category;
-        }
+      if (req.query.category) {
+        query.category = req.query.category;
+      }
 
-        const result = await taskCollection.find(query).toArray();
-        res.json(result);
-      
+      if (req.query.search) {
+        query.taskTitle = {
+          $regex: req.query.search,
+          $options: "i",
+        };
+      }
+
+      const result = await taskCollection.find(query).toArray();
+
+      res.json(result);
     });
 
     // client API
