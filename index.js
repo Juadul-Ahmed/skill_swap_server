@@ -1,7 +1,7 @@
 const dns = require("node:dns");
 dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const express = require("express");
 const cors = require("cors");
 const app = express();
@@ -32,6 +32,7 @@ async function run() {
     const database = client.db("skillswap");
     const taskCollection = database.collection("tasks");
     const clientCollection = database.collection("clients");
+    const proposalCollection = database.collection("proposals");
 
     app.get("/api/tasks", async (req, res) => {
       const query = {};
@@ -47,17 +48,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/api/tasks", async (req, res) => {
-      const task = req.body;
-      const newTask = {
-        ...task,
-        createdAt: new Date(),
-      };
-      const result = await taskCollection.insertOne(newTask);
-      res.send(result);
-    });
-
-    app.get("/api/tasks/public", async (req, res) => {
+     app.get("/api/tasks/public", async (req, res) => {
       const query = {
         status: "open",
       };
@@ -78,6 +69,28 @@ async function run() {
       res.json(result);
     });
 
+
+    app.get("/api/tasks/:id", async (req, res)=>{
+        const id = req.params.id;
+        const query ={
+          _id: new ObjectId(id)
+        }
+        const result = await taskCollection.findOne(query)
+        res.send(result)
+    })
+
+
+    app.post("/api/tasks", async (req, res) => {
+      const task = req.body;
+      const newTask = {
+        ...task,
+        createdAt: new Date(),
+      };
+      const result = await taskCollection.insertOne(newTask);
+      res.send(result);
+    });
+
+   
     // client API
 
     app.get("/api/profile/clients", async (req, res) => {
@@ -110,6 +123,34 @@ async function run() {
       );
       res.json(result);
     });
+
+    // Proposal related api
+
+    app.post('/api/proposals',async(req,res) => {
+      const proposal = req.body;
+      const newProposal = {
+        ...proposal,
+        createdAt: new Date()
+      }
+      const result = await proposalCollection.insertOne(newProposal)
+      res.json(result)
+    } )
+      // stats related api
+    app.get("/api/stats/client/:clientId", async (req, res) => {
+  
+        const { clientId } = req.params;
+        const tasks = await taskCollection.find({ clientId }).toArray();
+        
+        const totalTasks = tasks.length;
+        const openTasks = tasks.filter(t => t.status === "open").length;
+        const inProgressTasks = tasks.filter(t => t.status === "in-progress").length;
+        const totalSpent = tasks
+            .filter(t => t.status === "completed")
+            .reduce((sum, t) => sum + (t.budget || 0), 0);
+
+        res.json({ totalTasks, openTasks, inProgressTasks, totalSpent });
+     
+});
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
