@@ -33,6 +33,7 @@ async function run() {
     const taskCollection = database.collection("tasks");
     const clientCollection = database.collection("clients");
     const proposalCollection = database.collection("proposals");
+    const freelancerCollection = database.collection("freelancers");
 
     app.get("/api/tasks", async (req, res) => {
       const query = {};
@@ -78,6 +79,40 @@ async function run() {
         const result = await taskCollection.findOne(query)
         res.send(result)
     })
+
+
+
+    app.patch("/api/tasks/:id", async (req, res) => {
+
+    const { id } = req.params;
+    const updateData = req.body;
+
+    const task = await taskCollection.findOne({ _id: new ObjectId(id) });
+    const result = await taskCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
+    res.json(result);
+  });
+
+
+  app.delete("/api/tasks/:id", async (req, res) => {
+ 
+    const { id } = req.params;
+    const acceptedProposal = await proposalCollection.findOne({
+      taskId: id,
+      status: "accepted",
+    });
+    if (acceptedProposal) {
+      return res
+        .status(400)
+        .json({ error: "Cannot delete a task with an accepted proposal" });
+    }
+    const result = await taskCollection.deleteOne({ _id: new ObjectId(id) });
+    res.json(result);
+  
+});
+
 
 
     app.post("/api/tasks", async (req, res) => {
@@ -151,6 +186,44 @@ async function run() {
         res.json({ totalTasks, openTasks, inProgressTasks, totalSpent });
      
 });
+
+
+// freelancer related api
+  app.get("/api/profile/freelancers", async (req, res) => {
+  
+    const { freelancerId } = req.query;
+    if (!freelancerId) {
+      return res.status(400).json({ error: "freelancerId is required" });
+    }
+    const result = await freelancerCollection.findOne({ freelancerId });
+    res.json(result || null);
+  
+});
+
+
+app.post("/api/freelancers", async (req, res) => {
+
+    const freelancer = req.body;
+    const newFreelancer = {
+      ...freelancer,
+      createdAt: new Date(),
+    };
+    const result = await freelancerCollection.insertOne(newFreelancer);
+    res.json(result);
+});
+
+
+app.patch("/api/profile/freelancers/:freelancerId", async (req, res) => {
+  
+    const { freelancerId } = req.params;
+    const updateData = req.body;
+    const result = await freelancerCollection.updateOne(
+      { freelancerId },
+      { $set: updateData }
+    );
+    res.json(result);
+});
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
