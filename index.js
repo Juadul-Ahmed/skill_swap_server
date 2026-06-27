@@ -70,13 +70,40 @@ async function run() {
       res.json(result);
     });
 
+    app.get("/api/tasks/featured", async (req, res) => {
+    const result = await taskCollection
+        .find({ status: "open" })
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .toArray();
+    res.json(result.map(t => ({ ...t, _id: t._id.toString() })));
+});
+
+ app.patch("/api/tasks/:id/complete", async (req, res) => {
+      const { id } = req.params;
+      const { deliverableUrl } = req.body;
+
+      const result = await taskCollection.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            status: "completed",
+            deliverableUrl,
+            completedAt: new Date(),
+          },
+        },
+      );
+      res.json(result);
+    });
+
+
     app.get("/api/tasks/:id", async (req, res) => {
       const id = req.params.id;
       const query = {
         _id: new ObjectId(id),
       };
       const result = await taskCollection.findOne(query);
-      res.send(result);
+      res.json(result);
     });
 
     app.patch("/api/tasks/:id", async (req, res) => {
@@ -302,6 +329,29 @@ async function run() {
       res.json(result);
     });
 
+    app.get("/api/freelancers", async (req, res) => {
+    const result = await freelancerCollection.find({}).toArray();
+    res.json(result.map(f => ({ ...f, _id: f._id.toString() })));
+});
+    app.get("/api/freelancers/top", async (req, res) => {
+    const result = await freelancerCollection
+        .find({})
+        .limit(6)
+        .toArray();
+    res.json(result.map(f => ({ ...f, _id: f._id.toString() })));
+})
+
+
+
+  app.get("/api/freelancers/:freelancerId", async (req, res) => {
+    
+        const { freelancerId } = req.params;
+        const freelancer = await freelancerCollection.findOne({ freelancerId });
+        if (!freelancer) return res.status(404).json({ error: "Freelancer not found" });
+        res.json({ ...freelancer, _id: freelancer._id.toString() });
+   
+});
+
     app.patch("/api/profile/freelancers/:freelancerId", async (req, res) => {
       const { freelancerId } = req.params;
       const updateData = req.body;
@@ -374,23 +424,7 @@ async function run() {
       res.json(enriched);
     });
 
-    app.patch("/api/tasks/:id/complete", async (req, res) => {
-      const { id } = req.params;
-      const { deliverableUrl } = req.body;
-
-      const result = await taskCollection.updateOne(
-        { _id: new ObjectId(id) },
-        {
-          $set: {
-            status: "completed",
-            deliverableUrl,
-            completedAt: new Date(),
-          },
-        },
-      );
-      res.json(result);
-    });
-
+   
 
     app.get("/api/earnings/freelancer/:freelancerEmail", async (req, res) => {
 
@@ -504,6 +538,12 @@ app.get("/api/admin/transactions", async (req, res) => {
         res.json(enriched);
    
 });
+
+
+
+
+
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
