@@ -130,9 +130,9 @@ async function run() {
     });
 
     app.post("/api/clients", async (req, res) => {
-      const client = req.body;
+      const clientData = req.body;
       const newClient = {
-        ...client,
+        ...clientData,
         createdAt: new Date(),
       };
       const result = await clientCollection.insertOne(newClient);
@@ -164,7 +164,6 @@ async function run() {
     app.get("/api/proposals/client/:clientId", async (req, res) => {
       const { clientId } = req.params;
 
-     
       const tasks = await taskCollection.find({ clientId }).toArray();
       const taskIds = tasks.map((t) => t._id.toString());
 
@@ -176,11 +175,11 @@ async function run() {
         })
         .toArray();
 
-     
       const enriched = proposals.map((proposal) => {
         const task = tasks.find((t) => t._id.toString() === proposal.taskId);
         return {
           ...proposal,
+            _id: proposal._id.toString(),
           taskTitle: task?.taskTitle || "Unknown Task",
           taskCategory: task?.category || "",
           taskBudget: task?.budget || 0,
@@ -191,57 +190,53 @@ async function run() {
       res.json(enriched);
     });
 
-app.patch("/api/proposals/:id/accept", async (req, res) => {
-   
-        const { id } = req.params;
+    app.patch("/api/proposals/:id/accept", async (req, res) => {
+      const { id } = req.params;
 
-        const proposal = await proposalCollection.findOne({ _id: new ObjectId(id) });
-        if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+      const proposal = await proposalCollection.findOne({
+        _id: new ObjectId(id),
+      });
+      if (!proposal)
+        return res.status(404).json({ error: "Proposal not found" });
 
+      const alreadyAccepted = await proposalCollection.findOne({
+        taskId: proposal.taskId,
+        status: "accepted",
+      });
+      if (alreadyAccepted) {
+        return res
+          .status(400)
+          .json({
+            error: "A proposal has already been accepted for this task",
+          });
+      }
 
-        const alreadyAccepted = await proposalCollection.findOne({
-            taskId: proposal.taskId,
-            status: "accepted",
-        });
-        if (alreadyAccepted) {
-            return res.status(400).json({ error: "A proposal has already been accepted for this task" });
-        }
+      await proposalCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status: "accepted" } },
+      );
 
-       
-        await proposalCollection.updateOne(
-            { _id: new ObjectId(id) },
-            { $set: { status: "accepted" } }
-        );
+      await proposalCollection.updateMany(
+        { taskId: proposal.taskId, _id: { $ne: new ObjectId(id) } },
+        { $set: { status: "rejected" } },
+      );
 
-    
-        await proposalCollection.updateMany(
-            { taskId: proposal.taskId, _id: { $ne: new ObjectId(id) } },
-            { $set: { status: "rejected" } }
-        );
+      await taskCollection.updateOne(
+        { _id: new ObjectId(proposal.taskId) },
+        { $set: { status: "in-progress" } },
+      );
 
-      
-        await taskCollection.updateOne(
-            { _id: new ObjectId(proposal.taskId) },
-            { $set: { status: "in-progress" } }
-        );
+      res.json({ success: true });
+    });
 
-        res.json({ success: true });
-});
-
-
-app.patch("/api/proposals/:id/reject", async (req, res) => {
-    
-        const { id } = req.params;
-        const result = await proposalCollection.updateOne(
-            { _id: new ObjectId(id) },
-            { $set: { status: "rejected" } }
-        );
-        res.json(result);
-    
-});
-
-
-
+    app.patch("/api/proposals/:id/reject", async (req, res) => {
+      const { id } = req.params;
+      const result = await proposalCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status: "rejected" } },
+      );
+      res.json(result);
+    });
 
     // stats related api
     app.get("/api/stats/client/:clientId", async (req, res) => {
@@ -258,6 +253,33 @@ app.patch("/api/proposals/:id/reject", async (req, res) => {
         .reduce((sum, t) => sum + (t.budget || 0), 0);
 
       res.json({ totalTasks, openTasks, inProgressTasks, totalSpent });
+    });
+
+    app.get("/api/stats/freelancer/:freelancerEmail", async (req, res) => {
+      const { freelancerEmail } = req.params;
+      const proposals = await proposalCollection
+        .find({
+          freelancerEmail: decodeURIComponent(freelancerEmail),
+        })
+        .toArray();
+
+      const totalProposals = proposals.length;
+      const pendingProposals = proposals.filter(
+        (p) => p.status === "pending",
+      ).length;
+      const acceptedProposals = proposals.filter(
+        (p) => p.status === "accepted",
+      ).length;
+      const totalEarnings = proposals
+        .filter((p) => p.status === "accepted")
+        .reduce((sum, p) => sum + (p.budget || 0), 0);
+
+      res.json({
+        totalProposals,
+        pendingProposals,
+        acceptedProposals,
+        totalEarnings,
+      });
     });
 
     // freelancer related api
@@ -316,6 +338,172 @@ app.patch("/api/proposals/:id/reject", async (req, res) => {
 
       res.json(enriched);
     });
+
+    app.get("/api/projects/freelancer/:freelancerEmail", async (req, res) => {
+      const { freelancerEmail } = req.params;
+
+      const acceptedProposals = await proposalCollection
+        .find({
+          freelancerEmail: decodeURIComponent(freelancerEmail),
+          status: "accepted",
+        })
+        .toArray();
+
+      if (acceptedProposals.length === 0) return res.json([]);
+
+      const taskIds = acceptedProposals.map((p) => new ObjectId(p.taskId));
+      const tasks = await taskCollection
+        .find({
+          _id: { $in: taskIds },
+          status: { $in: ["in-progress", "completed"] },
+        })
+        .toArray();
+
+      const enriched = tasks.map((task) => {
+        const proposal = acceptedProposals.find(
+          (p) => p.taskId === task._id.toString(),
+        );
+        return {
+          ...task,
+          _id: task._id.toString(),
+          proposalBudget: proposal?.budget || 0,
+          proposalDays: proposal?.days || 0,
+        };
+      });
+
+      res.json(enriched);
+    });
+
+    app.patch("/api/tasks/:id/complete", async (req, res) => {
+      const { id } = req.params;
+      const { deliverableUrl } = req.body;
+
+      const result = await taskCollection.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            status: "completed",
+            deliverableUrl,
+            completedAt: new Date(),
+          },
+        },
+      );
+      res.json(result);
+    });
+
+
+    app.get("/api/earnings/freelancer/:freelancerEmail", async (req, res) => {
+
+        const { freelancerEmail } = req.params;
+
+
+        const acceptedProposals = await proposalCollection.find({
+            freelancerEmail: decodeURIComponent(freelancerEmail),
+            status: "accepted"
+        }).toArray();
+
+        if (acceptedProposals.length === 0) return res.json([]);
+
+   
+        const taskIds = acceptedProposals.map(p => new ObjectId(p.taskId));
+        const completedTasks = await taskCollection.find({
+            _id: { $in: taskIds },
+            status: "completed"
+        }).toArray();
+
+  
+        const enriched = await Promise.all(
+            completedTasks.map(async (task) => {
+                const proposal = acceptedProposals.find(
+                    p => p.taskId === task._id.toString()
+                );
+                const clientProfile = await clientCollection.findOne({
+                    clientId: task.clientId
+                });
+                return {
+                    _id: task._id.toString(),
+                    taskTitle: task.taskTitle,
+                    clientName: clientProfile?.name || "Unknown Client",
+                    amountEarned: proposal?.budget || 0,
+                    completedAt: task.completedAt || null,
+                    deliverableUrl: task.deliverableUrl || null,
+                };
+            })
+        );
+
+        res.json(enriched);
+    
+});
+
+app.delete("/api/admin/tasks/:id", async (req, res) => {
+    const { id } = req.params;
+    const result = await taskCollection.deleteOne({ _id: new ObjectId(id) });
+    res.json(result);
+});
+
+// admin related api
+app.get("/api/admin/users", async (req, res) => {
+  
+        const db = client.db(process.env.AUTH_DB_NAME);
+        const users = await db.collection("user").find({}).toArray();
+        res.json(users.map(u => ({
+            ...u,
+            _id: u._id.toString()
+        })));
+   
+});
+
+app.patch("/api/admin/users/:id/block", async (req, res) => {
+   
+        const { id } = req.params;
+        const { banned } = req.body;
+        const db = client.db(process.env.AUTH_DB_NAME);
+        const result = await db.collection("user").updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { banned } }
+        );
+        res.json(result);
+ 
+});
+
+
+app.get("/api/admin/stats", async (req, res) => {
+   
+        const db = client.db(process.env.AUTH_DB_NAME);
+        const totalUsers = await db.collection("user").countDocuments();
+        const totalTasks = await taskCollection.countDocuments();
+        const activeTasks = await taskCollection.countDocuments({ status: { $in: ["open", "in-progress"] } });
+
+        // Total revenue from completed tasks
+        const completedTasks = await taskCollection.find({ status: "completed" }).toArray();
+        const totalRevenue = completedTasks.reduce((sum, t) => sum + (t.budget || 0), 0);
+
+        res.json({ totalUsers, totalTasks, activeTasks, totalRevenue });
+  
+});
+
+app.get("/api/admin/transactions", async (req, res) => {
+    
+        const accepted = await proposalCollection.find({ status: "accepted" }).toArray();
+
+        const enriched = await Promise.all(accepted.map(async (proposal) => {
+            const task = await taskCollection.findOne({ _id: new ObjectId(proposal.taskId) });
+            const db = client.db(process.env.AUTH_DB_NAME);
+            const clientUser = await db.collection("user").findOne({ id: task?.clientId });
+
+            return {
+                _id: proposal._id.toString(),
+                clientEmail: clientUser?.email || "Unknown",
+                freelancerEmail: proposal.freelancerEmail,
+                amount: proposal.budget || 0,
+                date: proposal.createdAt,
+                status: task?.status || "unknown"
+            };
+        }));
+
+        res.json(enriched);
+   
+});
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
