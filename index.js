@@ -95,8 +95,24 @@ async function run() {
       if (req.query.search) {
         query.taskTitle = { $regex: req.query.search, $options: "i" };
       }
-      const result = await taskCollection.find(query).toArray();
-      res.json(result);
+
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 9;
+      const skip = (page - 1) * limit;
+
+      const total = await taskCollection.countDocuments(query);
+      const result = await taskCollection
+        .find(query)
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+      res.json({
+        tasks: result,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit),
+      });
     });
 
     app.get("/api/tasks/featured", async (req, res) => {
@@ -179,7 +195,7 @@ async function run() {
       }
     });
 
-    //CLIENT ROUTES 
+    //CLIENT ROUTES
 
     app.get("/api/profile/clients", async (req, res) => {
       const { clientId } = req.query;
@@ -202,19 +218,23 @@ async function run() {
       }
     });
 
-    app.patch("/api/profile/clients/:clientId", verifyToken, async (req, res) => {
-      try {
-        const result = await clientCollection.updateOne(
-          { clientId: req.params.clientId },
-          { $set: req.body },
-        );
-        res.json(result);
-      } catch (err) {
-        res.status(500).json({ error: err.message });
-      }
-    });
+    app.patch(
+      "/api/profile/clients/:clientId",
+      verifyToken,
+      async (req, res) => {
+        try {
+          const result = await clientCollection.updateOne(
+            { clientId: req.params.clientId },
+            { $set: req.body },
+          );
+          res.json(result);
+        } catch (err) {
+          res.status(500).json({ error: err.message });
+        }
+      },
+    );
 
-    // PROPOSAL ROUTES 
+    // PROPOSAL ROUTES
 
     app.post("/api/proposals", verifyToken, async (req, res) => {
       try {
@@ -341,12 +361,16 @@ async function run() {
 
     app.get("/api/stats/freelancer/:freelancerEmail", async (req, res) => {
       const proposals = await proposalCollection
-        .find({ freelancerEmail: decodeURIComponent(req.params.freelancerEmail) })
+        .find({
+          freelancerEmail: decodeURIComponent(req.params.freelancerEmail),
+        })
         .toArray();
       res.json({
         totalProposals: proposals.length,
-        pendingProposals: proposals.filter((p) => p.status === "pending").length,
-        acceptedProposals: proposals.filter((p) => p.status === "accepted").length,
+        pendingProposals: proposals.filter((p) => p.status === "pending")
+          .length,
+        acceptedProposals: proposals.filter((p) => p.status === "accepted")
+          .length,
         totalEarnings: proposals
           .filter((p) => p.status === "accepted")
           .reduce((sum, p) => sum + (p.budget || 0), 0),
@@ -395,17 +419,21 @@ async function run() {
       res.json({ ...freelancer, _id: freelancer._id.toString() });
     });
 
-    app.patch("/api/profile/freelancers/:freelancerId", verifyToken, async (req, res) => {
-      try {
-        const result = await freelancerCollection.updateOne(
-          { freelancerId: req.params.freelancerId },
-          { $set: req.body },
-        );
-        res.json(result);
-      } catch (err) {
-        res.status(500).json({ error: err.message });
-      }
-    });
+    app.patch(
+      "/api/profile/freelancers/:freelancerId",
+      verifyToken,
+      async (req, res) => {
+        try {
+          const result = await freelancerCollection.updateOne(
+            { freelancerId: req.params.freelancerId },
+            { $set: req.body },
+          );
+          res.json(result);
+        } catch (err) {
+          res.status(500).json({ error: err.message });
+        }
+      },
+    );
 
     // PROJECT & EARNINGS ROUTES
 
@@ -417,7 +445,10 @@ async function run() {
       if (acceptedProposals.length === 0) return res.json([]);
       const taskIds = acceptedProposals.map((p) => new ObjectId(p.taskId));
       const tasks = await taskCollection
-        .find({ _id: { $in: taskIds }, status: { $in: ["in-progress", "completed"] } })
+        .find({
+          _id: { $in: taskIds },
+          status: { $in: ["in-progress", "completed"] },
+        })
         .toArray();
       const enriched = tasks.map((task) => {
         const proposal = acceptedProposals.find(
@@ -465,16 +496,21 @@ async function run() {
     });
 
     //  ADMIN ROUTES
-    app.delete("/api/admin/tasks/:id", verifyToken, verifyAdmin, async (req, res) => {
-      try {
-        const result = await taskCollection.deleteOne({
-          _id: new ObjectId(req.params.id),
-        });
-        res.json(result);
-      } catch (err) {
-        res.status(500).json({ error: err.message });
-      }
-    });
+    app.delete(
+      "/api/admin/tasks/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const result = await taskCollection.deleteOne({
+            _id: new ObjectId(req.params.id),
+          });
+          res.json(result);
+        } catch (err) {
+          res.status(500).json({ error: err.message });
+        }
+      },
+    );
 
     app.get("/api/admin/users", verifyToken, verifyAdmin, async (req, res) => {
       const db = client.db(process.env.AUTH_DB_NAME);
@@ -482,20 +518,25 @@ async function run() {
       res.json(users.map((u) => ({ ...u, _id: u._id.toString() })));
     });
 
-    app.patch("/api/admin/users/:id/block", verifyToken, verifyAdmin, async (req, res) => {
-      try {
-        const db = client.db(process.env.AUTH_DB_NAME);
-        const result = await db
-          .collection("user")
-          .updateOne(
-            { _id: new ObjectId(req.params.id) },
-            { $set: { banned: req.body.banned } },
-          );
-        res.json(result);
-      } catch (err) {
-        res.status(500).json({ error: err.message });
-      }
-    });
+    app.patch(
+      "/api/admin/users/:id/block",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const db = client.db(process.env.AUTH_DB_NAME);
+          const result = await db
+            .collection("user")
+            .updateOne(
+              { _id: new ObjectId(req.params.id) },
+              { $set: { banned: req.body.banned } },
+            );
+          res.json(result);
+        } catch (err) {
+          res.status(500).json({ error: err.message });
+        }
+      },
+    );
 
     app.get("/api/admin/stats", verifyToken, verifyAdmin, async (req, res) => {
       const db = client.db(process.env.AUTH_DB_NAME);
@@ -514,34 +555,41 @@ async function run() {
       res.json({ totalUsers, totalTasks, activeTasks, totalRevenue });
     });
 
-    app.get("/api/admin/transactions", verifyToken, verifyAdmin, async (req, res) => {
-      const accepted = await proposalCollection
-        .find({ status: "accepted" })
-        .toArray();
-      const enriched = await Promise.all(
-        accepted.map(async (proposal) => {
-          const task = await taskCollection.findOne({
-            _id: new ObjectId(proposal.taskId),
-          });
-          const db = client.db(process.env.AUTH_DB_NAME);
-          const clientUser = await db
-            .collection("user")
-            .findOne({ id: task?.clientId });
-          return {
-            _id: proposal._id.toString(),
-            clientEmail: clientUser?.email || "Unknown",
-            freelancerEmail: proposal.freelancerEmail,
-            amount: proposal.budget || 0,
-            date: proposal.createdAt,
-            status: task?.status || "unknown",
-          };
-        }),
-      );
-      res.json(enriched);
-    });
+    app.get(
+      "/api/admin/transactions",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const accepted = await proposalCollection
+          .find({ status: "accepted" })
+          .toArray();
+        const enriched = await Promise.all(
+          accepted.map(async (proposal) => {
+            const task = await taskCollection.findOne({
+              _id: new ObjectId(proposal.taskId),
+            });
+            const db = client.db(process.env.AUTH_DB_NAME);
+            const clientUser = await db
+              .collection("user")
+              .findOne({ id: task?.clientId });
+            return {
+              _id: proposal._id.toString(),
+              clientEmail: clientUser?.email || "Unknown",
+              freelancerEmail: proposal.freelancerEmail,
+              amount: proposal.budget || 0,
+              date: proposal.createdAt,
+              status: task?.status || "unknown",
+            };
+          }),
+        );
+        res.json(enriched);
+      },
+    );
 
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!",
+    );
   } catch (err) {
     console.error("Startup error:", err);
   }
